@@ -1,0 +1,142 @@
+app.js
+// {`https://ipfs.infura.io/ipfs/${state.memeHash}`}
+
+import React, { useState, useEffect } from "react";
+import socketIOClient from "socket.io-client";
+import Web3 from "web3";
+import "./App.css";
+import Meme from "../abis/Meme.json";
+
+const ipfsClient = require("ipfs-http-client");
+const ipfs = ipfsClient({
+  host: "ipfs.infura.io",
+  port: 5001,
+  protocol: "https",
+}); // leaving out the arguments will default to these values
+
+function App() {
+  const [data, setData] = useState("");
+  const [state, setState] = useState({
+    memeHash: "",
+    contract: null,
+    web3: null,
+    buffer: null,
+    account: null,
+  });
+
+  var enc = new TextEncoder();
+
+  useEffect(() => {
+    const socket = socketIOClient("http://127.0.0.1:4001/");
+    socket.on("message", (data) => {
+      console.log(data);
+      setData(data);
+    });
+  }, []);
+
+  useEffect(() => {
+    const reRender = async () => {
+      await dataToIpfs(data);
+      console.log(data);
+      await ipfsToDecentral();
+      await loadWeb3();
+      await loadBlockchainData();
+    };
+
+    reRender();
+  }, [data]);
+
+  const loadWeb3 = async () => {
+    if (window.ethereum) {
+      window.web3 = new Web3(window.ethereum);
+      await window.ethereum.enable();
+    } else if (window.web3) {
+      window.web3 = new Web3(window.web3.currentProvider);
+    } else {
+      window.alert(
+        "Non-Ethereum browser detected. You should consider trying MetaMask!"
+      );
+    }
+  };
+
+  const loadBlockchainData = async () => {
+    const web3 = window.web3;
+    // Load account
+    const accounts = await web3.eth.getAccounts();
+    setState({ account: accounts[0] });
+    const networkId = await web3.eth.net.getId();
+    const networkData = Meme.networks[networkId];
+    if (networkData) {
+      const contract = web3.eth.Contract(Meme.abi, networkData.address);
+      setState({ contract });
+      const memeHash = await contract.methods.get().call();
+      setState({ memeHash });
+    } else {
+      window.alert("Smart contract not deployed to detected network.");
+    }
+  };
+
+  const dataToIpfs = async (event) => {
+    console.log(event);
+    const file = event;
+    // const reader = new window.FileReader();
+    const reader = enc.encode(file);
+    // reader.readAsBinaryString(file);
+    reader.onloadend = () => {
+      setState({ buffer: Buffer(reader.result) });
+      console.log("buffer", state.buffer);
+    };
+  };
+
+  const ipfsToDecentral = async () => {
+    console.log("Submitting file to ipfs...");
+    ipfs.add(state.buffer, (error, result) => {
+      console.log("Ipfs result", result);
+      if (error) {
+        console.error(error);
+        return;
+      }
+      state.contract.methods
+        .set(result[0].hash)
+        .send({ from: state.account })
+        .then((r) => {
+          return setState({ memeHash: result[0].hash });
+        });
+    });
+  };
+
+  return (
+    <div>
+      <p>This is data from front end: {data}</p>
+    </div>
+  );
+}
+
+export default App;
+
+
+
+---------------------------------------------
+node_to_react.js
+const express = require("express");
+const http = require("http");
+const socketio = require("socket.io");
+const app = express();
+const port = 4001;
+const httpServer = http.createServer(app);
+
+const server = new socketio.Server(httpServer, {
+  cors: {
+    origin: "*",
+  },
+});
+
+let timeChenge;
+server.on("connection", (socket) => {
+  if (timeChenge) clearInterval(timeChenge);
+  setInterval(() => socket.emit("message", Date()), 1000);
+});
+
+httpServer.listen(port);
+
+
