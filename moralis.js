@@ -7,7 +7,7 @@ const Moralis = require("moralis").default;
 
 const App = () => {
   const [state, setState] = useState({
-    data: "",
+    data: [],
     flag: true,
     dataHash: null,
   });
@@ -15,7 +15,7 @@ const App = () => {
   let uploadArray = [
     {
       path: "myJson.json",
-      content: ["hello"],
+      content: ["helloworld"],
     },
   ];
 
@@ -23,10 +23,11 @@ const App = () => {
     if (!Moralis.Core.isStarted) {
       await Moralis.start({
         apiKey:
-          "GFJ8vWRvbbJKjk3ajmfHDeVyNqF0JXw48TzB0QcyTL4YT1Mi4jwfo8FvRXdIa6XP",
+          "p1KL1YbNWDDp5dwj3Fe0Bj2faF24D6TzohCpXDs4VwjuhiI50CZj6sg9dza8ABh9",
       });
     }
 
+    console.log('abi:::', uploadArray)
     const response = await Moralis.EvmApi.ipfs.uploadFolder({
       abi: uploadArray,
     });
@@ -35,17 +36,16 @@ const App = () => {
       dataHash: response.result[0].path,
       flag: !state.flag,
     });
-
-    console.log("response.result::", response.result[0].path);
   };
 
   useEffect(() => {
     const socket = socketIOClient("http://127.0.0.1:4001/");
     socket.on("message", (data) => {
       // console.log(uploadArray[0].content)
-      uploadArray[0].content.push(data);
-      console.log(uploadArray[0].content);
+      setState({ data: data })
     });
+    uploadArray[0].content.push(state.data);
+
 
     reRender();
 
