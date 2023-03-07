@@ -7,12 +7,14 @@ const Moralis = require("moralis").default;
 const App = () => {
   const [state, setState] = useState({
     getData: null,
-    dataHash: null,
+    dataHash: "",
     dataLen: 0,
-    metamaskAC: "",
-    contract: null,
     dataSetFlag: false,
   });
+
+  let nakedDataHash = null;
+  let metamaskAC = null;
+  let globalContract = null;
 
   let tempArray = [];
   let uploadArray = [
@@ -27,6 +29,21 @@ const App = () => {
     loadBlockchainData();
   }, []);
 
+  const getMethodContract = async () => {
+    if (globalContract !== null) {
+      const newDataHash = await globalContract.methods.get().call();
+      await fetch(newDataHash).then((result) => {
+        console.log("result result result:::", result);
+        setState({ getData: result.json() });
+      });
+      console.log("new data hash:::", state.getData);
+    }
+  };
+
+  // useUpdateEffect(() => {
+  //   getMethodContract();
+  // }, [state.dataSetFlag]);
+
   // Get the account
   // Get the network
   // Get smart contract
@@ -37,23 +54,14 @@ const App = () => {
     const accounts = await web3.eth.getAccounts();
     const networkId = await web3.eth.net.getId();
     const networkData = await DataRW.networks[networkId];
-    setState({ metamaskAC: accounts[0] });
+    metamaskAC = accounts[0];
 
     if (networkData) {
       const abi = DataRW.abi;
       const address = networkData.address;
       // fetching the smart contract
       const contract = new web3.eth.Contract(abi, address);
-      setState({ contract });
-
-      if (state.dataSetFlag) {
-        console.log("dataset flagh:>", state.dataHash);
-        const newDataHash = await contract.methods.get().call();
-        setState({
-          getData: newDataHash,
-        });
-        console.log("new data hash:::", newDataHash);
-      }
+      globalContract = contract;
     } else {
       window.alert("Smart contract not detected yet!");
     }
@@ -89,7 +97,10 @@ const App = () => {
         abi: uploadArray,
       });
 
-      setState({ dataHash: response.result[0].path });
+      nakedDataHash =
+        response.result[0].path !== null ? response.result[0].path : "";
+
+      setState({ dataHash: nakedDataHash });
     }
   };
 
@@ -104,19 +115,16 @@ const App = () => {
       uploadArray[0].content = tempArray;
       console.log(uploadArray[0].content);
       sendToIpfs();
-      console.log("first down here");
 
-      if (state.dataHash !== null) {
-        state.contract.methods
-          .set(state.dataHash)
-          .send({ from: state.metamaskAC })
+      if (nakedDataHash !== null) {
+        console.log("got you here!", nakedDataHash);
+        globalContract.methods
+          .set(nakedDataHash)
+          .send({ from: metamaskAC })
           .then(() => {
-            setState({ dataSetFlag: true });
+            getMethodContract();
           });
       }
-
-      console.log("first down here 2");
-
       state.dataLen = tempArray.length;
     }
   });
@@ -128,7 +136,7 @@ export default App;
 
 // setState({
 //   dataHash: response.result[0].path,
-//   // .split("https://ipfs.moralis.io:2053/ipfs/")
-//   // .pop()
-//   // .split("/myJson.json")[0],
+// .split("https://ipfs.moralis.io:2053/ipfs/")
+// .pop()
+// .split("/myJson.json")[0],
 // });
