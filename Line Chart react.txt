@@ -1,0 +1,798 @@
+import React from 'react';
+import PropTypes from 'prop-types';
+import { Badge } from 'antd';
+import { get, max, values } from 'lodash';
+import { useDispatch, useSelector } from 'react-redux';
+import { useMount, useSetState, useUpdateEffect } from 'react-use';
+import { useIntl } from 'react-intl';
+import {
+  Chart as ChartJS,
+  LineElement,
+  PointElement,
+  LinearScale,
+  Title,
+  ArcElement,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Line, Pie } from 'react-chartjs-2';
+import NoElement from '../../common/NoElement';
+import {
+  fetchDashboard,
+  fetchBackupDashboard,
+  fetchBatchDashboard,
+  fetchLogsDashboard,
+  fetchNormalDashboard,
+  fetchTaskDashboard,
+  fetchUsersDashboard,
+  fetchServicesDashboard,
+} from '../../../redux/actions/DashboardAction';
+import {
+  PiqnicRow,
+  PiqnicCol,
+  PiqnicCard,
+  PiqnicIcon,
+} from '../../common/controls/layout';
+import IntlMessages from '../../../utils/intlMessages';
+import PiqnicSpinSimple from '../../common/controls/message/PiqnicSpinSimple';
+import {
+  isSuccess,
+  getError,
+  convertISOToUserDateFormat,
+  deepClone,
+} from '../../../helpers/index';
+import PiqnicNotification, {
+  NotificationType,
+} from '../../common/controls/message/PiqnicNotification';
+import ScrollWraper from '../../common/ScrollWraper';
+import { testMailConnection } from '../../../redux/actions/EmailConfigAction';
+import { MAIL_CONNECTION_STATUS } from '../../../constants/Constants';
+
+ChartJS.register(
+  LineElement,
+  PointElement,
+  LinearScale,
+  Title,
+  ArcElement,
+  Tooltip,
+  Legend
+);
+
+function ServiceStatus(props) {
+  const intl = useIntl();
+  const dispatch = useDispatch();
+  const [state, setState] = useSetState({
+    usersonline: [],
+    userstotal: [],
+    linelabeldata: [],
+    firstlinedata: [],
+    seclinedata: [],
+    batchProcessingData: [],
+    batchProcessingLabel: [],
+    normalVolchartData: [],
+    normalVolchartLabel: [],
+    backupVolchartData: [],
+    backupVolchartLabel: [],
+    serviceStatus: [],
+    isProgressMode: {
+      timeoutFailedTasks: true,
+      users: true,
+      logs: true,
+      volumes: true,
+      batchProcess: true,
+      serviceStatus: true,
+    },
+    mailConnectionStatus: MAIL_CONNECTION_STATUS.PROCESSING,
+    callHideLoadingCallback: false,
+    callFetchServiceCallback: false,
+  });
+
+  const dateTimeFormat = useSelector((rstate) =>
+    get(
+      rstate.Login,
+      'userSettings.setting.userproperties.loggedInUserDateFormat',
+      {}
+    )
+  );
+  const reduxFetchDashboard = () => dispatch(fetchDashboard());
+  const reduxFetchBackupDashboard = () => dispatch(fetchBackupDashboard());
+  const reduxFetchBatchDashboard = () => dispatch(fetchBatchDashboard());
+  const reduxFetchLogsDashboard = () => dispatch(fetchLogsDashboard());
+  const reduxFetchNormalDashboard = () => dispatch(fetchNormalDashboard());
+  const reduxFetchTaskDashboard = () => dispatch(fetchTaskDashboard());
+  const reduxFetchUsersDashboard = () => dispatch(fetchUsersDashboard());
+  const reduxFetchServicesDashboard = () => dispatch(fetchServicesDashboard());
+  const reduxTestMailConnection = () => dispatch(testMailConnection());
+
+  const showLoading = (widgetProgressName) => {
+    if (widgetProgressName === 'ALL') {
+      setState({
+        isProgressMode: {
+          timeoutFailedTasks: true,
+          users: true,
+          logs: true,
+          volumes: true,
+          batchProcess: true,
+          serviceStatus: state.isProgressMode.serviceStatus,
+        },
+      });
+    } else {
+      const isProgressMode = state.isProgressMode;
+      isProgressMode[widgetProgressName] = true;
+      setState({
+        isProgressMode,
+      });
+    }
+  };
+
+  const hideLoading = (widgetProgressName, loadServices = false) => {
+    if (widgetProgressName === 'ALL') {
+      setState({
+        isProgressMode: {
+          timeoutFailedTasks: false,
+          users: false,
+          logs: false,
+          volumes: false,
+          batchProcess: false,
+          serviceStatus: state.isProgressMode.serviceStatus,
+        },
+        callFetchServiceCallback: loadServices
+          ? !state.callFetchServiceCallback
+          : state.callFetchServiceCallback,
+      });
+    } else {
+      const isProgressMode = state.isProgressMode;
+      isProgressMode[widgetProgressName] = false;
+      setState({
+        isProgressMode,
+      });
+    }
+  };
+
+  const callFetchDashboard = async () => {
+    showLoading('ALL');
+    const response = await reduxFetchDashboard();
+    console.log('Dashboard callFetchDashbord response:..:', response);
+    if (isSuccess(response)) {
+      let clonedLabel = deepClone(response.payload.line.labelData);
+      clonedLabel = clonedLabel.map((data) =>
+        convertISOToUserDateFormat(data, dateTimeFormat.date)
+      );
+
+      setState({
+        usersonline: response.payload.users.online,
+        userstotal: response.payload.users.total,
+        linelabeldata: clonedLabel,
+        firstlinedata: response.payload.line.data[0].lineData,
+        seclinedata: response.payload.line.data[1].lineData,
+        batchProcessingData: response.payload.batchProcessing.data,
+        batchProcessingLabel: response.payload.batchProcessing.labels,
+        normalVolchartData: response.payload.normalVolchart.data,
+        normalVolchartLabel: response.payload.normalVolchart.labels,
+        backupVolchartData: response.payload.backupVolchart.data,
+        backupVolchartLabel: response.payload.backupVolchart.labels,
+        callHideLoadingCallback: !state.callHideLoadingCallback,
+      });
+    }
+  };
+
+  useUpdateEffect(() => {
+    hideLoading('ALL', true);
+  }, [state.callHideLoadingCallback]);
+
+  const showError = (response) => {
+    if (!isSuccess(response)) {
+      PiqnicNotification(
+        NotificationType.error,
+        intl.formatMessage({ id: 'common.error.message' }),
+        getError(response),
+        0
+      );
+    }
+  };
+
+  const callFetchBackupDashboard = async () => {
+    showLoading('volumes');
+    const response = await reduxFetchBackupDashboard();
+    if (isSuccess(response)) {
+      setState({
+        backupVolchartData: response.payload.data,
+        backupVolchartLabel: response.payload.labels,
+      });
+    }
+    showError(response);
+    hideLoading('volumes');
+  };
+
+  const callFetchNormalDashboard = async () => {
+    showLoading('volumes');
+    const response = await reduxFetchNormalDashboard();
+    if (isSuccess(response)) {
+      setState({
+        normalVolchartData: response.payload.data,
+        normalVolchartLabel: response.payload.labels,
+      });
+    }
+    showError(response);
+    hideLoading('volumes');
+  };
+
+  const callFetchBatchDashboard = async () => {
+    showLoading('batchProcess');
+    const response = await reduxFetchBatchDashboard();
+    if (isSuccess(response)) {
+      setState({
+        batchProcessingData: response.payload.data,
+        batchProcessingLabel: response.payload.labels,
+      });
+    }
+    showError(response);
+    hideLoading('batchProcess');
+  };
+
+  const callFetchLogsDashboard = async () => {
+    showLoading('logs');
+    const response = await reduxFetchLogsDashboard();
+    showError(response);
+    hideLoading('logs');
+  };
+
+  const callFetchTaskDashboard = async () => {
+    showLoading('timeoutFailedTasks');
+    const response = await reduxFetchTaskDashboard();
+    if (isSuccess(response)) {
+      setState({
+        firstlinedata: response.payload.data[0].lineData,
+        seclinedata: response.payload.data[1].lineData,
+        linelabeldata: response.payload.labelData,
+      });
+    }
+    showError(response);
+    hideLoading('timeoutFailedTasks');
+  };
+
+  const callFetchUsersDashboard = async () => {
+    showLoading('users');
+    const response = await reduxFetchUsersDashboard();
+    if (isSuccess(response)) {
+      setState({
+        usersonline: response.payload.online,
+        userstotal: response.payload.total,
+      });
+    }
+    showError(response);
+    hideLoading('users');
+  };
+
+  const testMailConnectionDidCall = (response) => {
+    if (isSuccess(response)) {
+      setState({
+        mailConnectionStatus: response.payload.status,
+      });
+    } else {
+      setState({
+        mailConnectionStatus: MAIL_CONNECTION_STATUS.INCORRECT,
+      });
+    }
+  };
+
+  const callTestMailConnectionApi = async () => {
+    setState({
+      mailConnectionStatus: MAIL_CONNECTION_STATUS.PROCESSING,
+    });
+    const response = await reduxTestMailConnection();
+    testMailConnectionDidCall(response);
+  };
+
+  const callFetchServicesDashboard = async () => {
+    showLoading('serviceStatus');
+    callTestMailConnectionApi();
+    const response = await reduxFetchServicesDashboard();
+    if (isSuccess(response)) {
+      setState({
+        serviceStatus: response.payload,
+      });
+    }
+    showError(response);
+    hideLoading('serviceStatus');
+  };
+
+  useUpdateEffect(() => {
+    callFetchServicesDashboard();
+  }, [state.callFetchServiceCallback]);
+
+  const generatechartData = (piedata, labelsdata) => {
+    const Rcolors = ['#A6ACAF', '#C39BD3', '#5499C7', '#8E44AD'];
+    const chartdata = {
+      labels: labelsdata,
+      datasets: [
+        {
+          data: piedata,
+          backgroundColor: Rcolors,
+          hoverBackgroundColor: Rcolors,
+        },
+      ],
+    };
+    return chartdata;
+  };
+
+  const generatelineData = () => {
+    const data = {
+      labels: state.linelabeldata,
+      datasets: [
+        {
+          label: 'Failed Tasks',
+          fill: false,
+          lineTension: 0.1,
+          backgroundColor: 'rgba(75,192,192,0.4)',
+          borderColor: 'rgba(255, 0, 0, 0.6)',
+          borderCapStyle: 'butt',
+          borderDash: [],
+          borderDashOffset: 0.0,
+          borderJoinStyle: 'miter',
+          pointBorderColor: 'rgba(75,192,192,1)',
+          pointBackgroundColor: '#fff',
+          pointBorderWidth: 1,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: 'rgba(75,192,192,1)',
+          pointHoverBorderColor: 'rgba(220,220,220,1)',
+          pointHoverBorderWidth: 2,
+          pointRadius: 1,
+          pointHitRadius: 10,
+          data: state.firstlinedata,
+        },
+        {
+          label: 'Timeout',
+          fill: false,
+          lineTension: 0.1,
+          backgroundColor: 'rgba(0,255,0,0.3)',
+          borderColor: 'rgb(0, 255, 0, 0.6)',
+          borderCapStyle: 'butt',
+          borderDash: [],
+          borderDashOffset: 0.0,
+          borderJoinStyle: 'miter',
+          pointBorderColor: 'rgba(75,192,192,1)',
+          pointBackgroundColor: '#fff',
+          pointBorderWidth: 1,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: 'rgba(75,192,192,1)',
+          pointHoverBorderColor: 'rgba(220,220,220,1)',
+          pointHoverBorderWidth: 2,
+          pointRadius: 1,
+          pointHitRadius: 10,
+          data: state.seclinedata,
+        },
+      ],
+    };
+    return data;
+  };
+
+  const refresh = (type) => {
+    switch (type) {
+      case 'volumes':
+        callFetchBackupDashboard();
+        callFetchNormalDashboard();
+        break;
+      case 'batch':
+        callFetchBatchDashboard();
+        break;
+      case 'logs':
+        callFetchLogsDashboard();
+        break;
+      case 'task':
+        callFetchTaskDashboard();
+        break;
+      case 'users':
+        callFetchUsersDashboard();
+        break;
+      case 'serviceStatus':
+        callFetchServicesDashboard();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleSelect = (key, userkey) => {
+    props.handleSelect(key, userkey);
+  };
+
+  const getMailConnectionStatus = () => {
+    let status;
+    if (state.mailConnectionStatus === MAIL_CONNECTION_STATUS.CORRECT) {
+      status = 'success';
+    } else if (
+      state.mailConnectionStatus === MAIL_CONNECTION_STATUS.INCORRECT
+    ) {
+      status = 'error';
+    } else if (state.mailConnectionStatus === MAIL_CONNECTION_STATUS.DEFAULT) {
+      status = 'default';
+    } else if (
+      state.mailConnectionStatus === MAIL_CONNECTION_STATUS.PROCESSING
+    ) {
+      status = 'processing';
+    }
+    return status;
+  };
+
+  useMount(() => {
+    callFetchDashboard();
+  });
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'right',
+        labels: {
+          boxWidth: 12,
+        },
+      },
+    },
+  };
+  const options1 = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'right',
+        labels: {
+          boxWidth: 12,
+        },
+      },
+    },
+  };
+  const optionsline = {
+    responsive: true,
+    tooltips: {
+      mode: 'index',
+      intersect: false,
+    },
+    hover: {
+      mode: 'nearest',
+      intersect: true,
+    },
+    scales: {
+      xAxis: {
+        display: true,
+        title: {
+          display: true,
+          text: 'Date',
+        },
+      },
+      yAxis: {
+        display: true,
+        title: {
+          display: true,
+          text: 'Number',
+        },
+        beginAtZero: true,
+        min: 0,
+        ticks: {
+          stepSize:
+            max([
+              max(values(state.firstlinedata)),
+              max(values(state.seclinedata)),
+            ]) === 0
+              ? 1
+              : null,
+        },
+      },
+    },
+  };
+  return (
+    <div>
+      {state.userstotal ? (
+        <ScrollWraper offset={15}>
+          <PiqnicRow gutter={10} style={{ margin: 0 }}>
+            <PiqnicCol md={16}>
+              <PiqnicCard
+                title={
+                  <IntlMessages id="setting.servicelogs.dashboard.heading.timeout.task" />
+                }
+                extra={
+                  <PiqnicIcon
+                    titlePosition="top"
+                    type="sync"
+                    className="piq-icon-blk"
+                    title={intl.formatMessage({
+                      id: 'menu.refresh',
+                    })}
+                    onClick={() => refresh('task')}
+                  />
+                }
+              >
+                {!state.isProgressMode.timeoutFailedTasks ? (
+                  <div>
+                    <Line data={generatelineData()} options={optionsline} />
+                    <div className="ant-text-right">
+                      <span>
+                        <a
+                          title={intl.formatMessage({
+                            id: 'common.message.view.more',
+                          })}
+                          className="more-link"
+                          onClick={() => handleSelect('5', '4')}
+                          onKeyDown={() => handleSelect('5', '4')}
+                        >
+                          <IntlMessages id="common.message.view.more" />
+                        </a>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <PiqnicSpinSimple height={340} />
+                )}
+              </PiqnicCard>
+              <PiqnicCard
+                title={
+                  <IntlMessages id="setting.servicelogs.dashboard.heading.volume" />
+                }
+                extra={
+                  <PiqnicIcon
+                    titlePosition="top"
+                    title={intl.formatMessage({
+                      id: 'menu.refresh',
+                    })}
+                    type="sync"
+                    onClick={() => refresh('volumes')}
+                    className="piq-icon-blk"
+                  />
+                }
+              >
+                {!state.isProgressMode.volumes ? (
+                  <div>
+                    <div>
+                      <PiqnicRow gutter={10}>
+                        <PiqnicCol md={12}>
+                          <h3 className="sub-heading">
+                            <IntlMessages id="setting.servicelogs.dashboard.heading.normal.volume" />
+                          </h3>
+                          {state.normalVolchartData !== null &&
+                          state.normalVolchartLabel !== null ? (
+                            <div style={{ height: '152px' }}>
+                              <Pie
+                                data={generatechartData(
+                                  state.normalVolchartData,
+                                  state.normalVolchartLabel
+                                )}
+                                options={options1}
+                              />
+                            </div>
+                          ) : (
+                            <NoElement message="There is no data to Display." />
+                          )}
+                        </PiqnicCol>
+                        <PiqnicCol md={12}>
+                          <h3 className="sub-heading">
+                            <IntlMessages id="setting.servicelogs.dashboard.heading.backup.volume" />
+                          </h3>
+                          {state.backupVolchartData !== null &&
+                          state.backupVolchartLabel !== null ? (
+                            <div style={{ height: '152px' }}>
+                              <Pie
+                                data={generatechartData(
+                                  state.backupVolchartData,
+                                  state.backupVolchartLabel
+                                )}
+                                options={options1}
+                              />
+                            </div>
+                          ) : (
+                            <NoElement message="There is no data to Display." />
+                          )}
+                        </PiqnicCol>
+                      </PiqnicRow>
+                    </div>
+                    <div className="ant-text-right">
+                      <span>
+                        <a
+                          title={intl.formatMessage({
+                            id: 'common.message.view.more',
+                          })}
+                          className="more-link"
+                          onClick={() => handleSelect('3')}
+                          onKeyDown={() => handleSelect('3')}
+                        >
+                          <IntlMessages id="common.message.view.more" />
+                        </a>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <PiqnicSpinSimple height={79} />
+                )}
+              </PiqnicCard>
+            </PiqnicCol>
+            <PiqnicCol md={8}>
+              <PiqnicCard
+                title={
+                  <IntlMessages id="setting.servicelogs.dashboard.label.users" />
+                }
+                extra={
+                  <PiqnicIcon
+                    titlePosition="top"
+                    type="sync"
+                    className="piq-icon-blk"
+                    title={intl.formatMessage({
+                      id: 'menu.refresh',
+                    })}
+                    onClick={() => refresh('users')}
+                  />
+                }
+              >
+                {!state.isProgressMode.users ? (
+                  <PiqnicRow>
+                    <div className="user-card card-stats flex-1">
+                      <div className="content">
+                        <PiqnicRow>
+                          <PiqnicCol xs={8}>
+                            <div className="ant-text-center icon-warning">
+                              <PiqnicIcon
+                                type="users"
+                                className="piq-icon-blk"
+                              />
+                            </div>
+                          </PiqnicCol>
+                          <PiqnicCol xs={8}>
+                            <div className="numbers">
+                              <p>
+                                <span>
+                                  <IntlMessages id="setting.servicelogs.dashboard.label.total" />
+                                </span>
+                              </p>
+                              {state.userstotal ? state.userstotal : '0'}
+                            </div>
+                          </PiqnicCol>
+                          <PiqnicCol xs={8}>
+                            <div className="numbers">
+                              <p>
+                                <span>
+                                  <IntlMessages id="setting.servicelogs.dashboard.label.online" />
+                                </span>
+                              </p>
+                              {state.usersonline ? state.usersonline : '0'}
+                            </div>
+                          </PiqnicCol>
+                        </PiqnicRow>
+                        <div className="ant-text-right">
+                          <span>
+                            <a
+                              title={intl.formatMessage({
+                                id: 'common.message.view.more',
+                              })}
+                              className="more-link"
+                              onClick={() => handleSelect('5', '3')}
+                              onKeyDown={() => handleSelect('5', '3')}
+                            >
+                              <IntlMessages id="common.message.view.more" />
+                            </a>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </PiqnicRow>
+                ) : (
+                  <PiqnicSpinSimple height={79} />
+                )}
+              </PiqnicCard>
+              <PiqnicCard
+                title={
+                  <IntlMessages id="setting.servicelogs.dashboard.heading.service.status" />
+                }
+                extra={
+                  <PiqnicIcon
+                    titlePosition="top"
+                    type="sync"
+                    className="piq-icon-blk"
+                    title={intl.formatMessage({
+                      id: 'menu.refresh',
+                    })}
+                    onClick={() => refresh('serviceStatus')}
+                  />
+                }
+              >
+                {!state.isProgressMode.serviceStatus ? (
+                  <PiqnicRow gutter={10}>
+                    {state.serviceStatus &&
+                      state.serviceStatus.map((item) => (
+                        <PiqnicCol
+                          key={item.serviceName}
+                          md={24}
+                          style={{ padding: 5 }}
+                        >
+                          <Badge
+                            title={item.status}
+                            status={item.status === 'Up' ? 'success' : 'error'}
+                            text={item.serviceDisplayName}
+                          />
+                        </PiqnicCol>
+                      ))}
+                    <PiqnicCol md={24} style={{ padding: 5 }}>
+                      <Badge
+                        status={getMailConnectionStatus()}
+                        text={intl.formatMessage({
+                          id: 'system.logs.dashboard.smtp.status',
+                        })}
+                      />
+                    </PiqnicCol>
+                  </PiqnicRow>
+                ) : (
+                  <PiqnicSpinSimple height={79} />
+                )}
+              </PiqnicCard>
+              <PiqnicCard
+                title={
+                  <IntlMessages id="setting.servicelogs.dashboard.heading.batch.process" />
+                }
+                extra={
+                  <PiqnicIcon
+                    titlePosition="top"
+                    type="sync"
+                    className="piq-icon-blk"
+                    title={intl.formatMessage({
+                      id: 'menu.refresh',
+                    })}
+                    onClick={() => refresh('batch')}
+                  />
+                }
+              >
+                {!state.isProgressMode.batchProcess ? (
+                  <div>
+                    {state.batchProcessingData !== null &&
+                    state.batchProcessingLabel !== null ? (
+                      <div style={{ height: '144px' }}>
+                        <Pie
+                          data={generatechartData(
+                            state.batchProcessingData,
+                            state.batchProcessingLabel
+                          )}
+                          options={options}
+                        />
+                      </div>
+                    ) : (
+                      <NoElement
+                        message={intl.formatMessage({
+                          id: 'common.not.data.to.display',
+                        })}
+                      />
+                    )}
+                    <div className="ant-text-right">
+                      <span>
+                        <a
+                          title={intl.formatMessage({
+                            id: 'common.message.view.more',
+                          })}
+                          className="more-link"
+                          onClick={() => handleSelect('4')}
+                          onKeyDown={() => handleSelect('4')}
+                        >
+                          <IntlMessages id="common.message.view.more" />
+                        </a>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <PiqnicSpinSimple height={180} />
+                )}
+              </PiqnicCard>
+            </PiqnicCol>
+          </PiqnicRow>
+        </ScrollWraper>
+      ) : (
+        <NoElement
+          message={intl.formatMessage({
+            id: 'common.not.data.to.display',
+          })}
+        />
+      )}
+    </div>
+  );
+}
+
+ServiceStatus.propTypes = {
+  handleSelect: PropTypes.func,
+};
+
+export default ServiceStatus;
